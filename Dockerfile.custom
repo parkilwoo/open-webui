@@ -1,0 +1,10 @@
+FROM ghcr.io/open-webui/open-webui:0.6.15
+
+RUN pip install -qU langchain-pymupdf4llm langchain-openai
+
+# Copy modified backend files
+COPY backend/open_webui/retrieval/loaders/main.py /app/backend/open_webui/retrieval/loaders/main.py
+COPY backend/open_webui/routers/retrieval.py /app/backend/open_webui/routers/retrieval.py
+COPY backend/open_webui/utils/misc.py /app/backend/open_webui/utils/misc.py
+
+USER 0:0

@@ -25,36 +25,43 @@ def deep_update(d, u):
     return d
 
 
+# def get_message_list(messages, message_id):
+#     """
+#     Reconstructs a list of messages in order up to the specified message_id.
+
+#     :param message_id: ID of the message to reconstruct the chain
+#     :param messages: Message history dict containing all messages
+#     :return: List of ordered messages starting from the root to the given message
+#     """
+
+#     # Handle case where messages is None
+#     if not messages:
+#         return []  # Return empty list instead of None to prevent iteration errors
+
+#     # Find the message by its id
+#     current_message = messages.get(message_id)
+
+#     if not current_message:
+#         return []  # Return empty list instead of None to prevent iteration errors
+
+#     # Reconstruct the chain by following the parentId links
+#     message_list = []
+
+#     while current_message:
+#         message_list.insert(
+#             0, current_message
+#         )  # Insert the message at the beginning of the list
+#         parent_id = current_message.get("parentId")  # Use .get() for safety
+#         current_message = messages.get(parent_id) if parent_id else None
+
+#     return message_list
 def get_message_list(messages, message_id):
-    """
-    Reconstructs a list of messages in order up to the specified message_id.
-
-    :param message_id: ID of the message to reconstruct the chain
-    :param messages: Message history dict containing all messages
-    :return: List of ordered messages starting from the root to the given message
-    """
-
-    # Handle case where messages is None
+    """히스토리 없이 현재 메시지만 반환"""
     if not messages:
-        return []  # Return empty list instead of None to prevent iteration errors
-
-    # Find the message by its id
+        return []
     current_message = messages.get(message_id)
+    return [current_message] if current_message else []
 
-    if not current_message:
-        return []  # Return empty list instead of None to prevent iteration errors
-
-    # Reconstruct the chain by following the parentId links
-    message_list = []
-
-    while current_message:
-        message_list.insert(
-            0, current_message
-        )  # Insert the message at the beginning of the list
-        parent_id = current_message.get("parentId")  # Use .get() for safety
-        current_message = messages.get(parent_id) if parent_id else None
-
-    return message_list
 
 
 def get_messages_content(messages: list[dict]) -> str:

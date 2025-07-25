@@ -28,7 +28,7 @@ from pydantic import BaseModel
 import tiktoken
 
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter, TokenTextSplitter
+from langchain.text_splitter import RecursiveCharacterTextSplitter, TokenTextSplitter, MarkdownTextSplitter
 from langchain_core.documents import Document
 
 from open_webui.models.files import FileModel, Files
@@ -1141,11 +1141,17 @@ def save_docs_to_vector_db(
 
     if split:
         if request.app.state.config.TEXT_SPLITTER in ["", "character"]:
-            text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=request.app.state.config.CHUNK_SIZE,
-                chunk_overlap=request.app.state.config.CHUNK_OVERLAP,
-                add_start_index=True,
+            # text_splitter = RecursiveCharacterTextSplitter(
+            #     chunk_size=request.app.state.config.CHUNK_SIZE,
+            #     chunk_overlap=request.app.state.config.CHUNK_OVERLAP,
+            #     add_start_index=True,
+            # )
+            text_splitter = MarkdownTextSplitter(
+                chunk_size=1000,
+                chunk_overlap=200,
+                length_function=len
             )
+
         elif request.app.state.config.TEXT_SPLITTER == "token":
             log.info(
                 f"Using token text splitter: {request.app.state.config.TIKTOKEN_ENCODING_NAME}"

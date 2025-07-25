@@ -1,3 +1,4 @@
+import re
 import requests
 import logging
 import ftfy
@@ -18,8 +19,13 @@ from langchain_community.document_loaders import (
     UnstructuredPowerPointLoader,
     UnstructuredRSTLoader,
     UnstructuredXMLLoader,
-    YoutubeLoader,
+    YoutubeLoader
 )
+from langchain_pymupdf4llm import PyMuPDF4LLMLoader
+from langchain_community.document_loaders.parsers import LLMImageBlobParser
+from langchain_openai import ChatOpenAI
+from langchain.text_splitter import MarkdownHeaderTextSplitter
+
 from langchain_core.documents import Document
 
 from open_webui.retrieval.loaders.external_document import ExternalDocumentLoader
@@ -29,6 +35,7 @@ from open_webui.retrieval.loaders.datalab_marker import DatalabMarkerLoader
 
 
 from open_webui.env import SRC_LOG_LEVELS, GLOBAL_LOG_LEVEL
+import pandas as pd
 
 logging.basicConfig(stream=sys.stdout, level=GLOBAL_LOG_LEVEL)
 log = logging.getLogger(__name__)
@@ -210,19 +217,88 @@ class Loader:
     def __init__(self, engine: str = "", **kwargs):
         self.engine = engine
         self.kwargs = kwargs
+        # 3. 시맨틱 청킹: 텍스트를 의미 단위로 세분화
+        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        semantic_splitter = SemanticChunker(embeddings, breakpoint_threshold_type="percentile")        
+
+    def _extract_tables(self, markdown):
+        table_pattern = r"\|.*?\|\n\|[-| :]+\|\n(.*?)(?=\n\n|$)"  # 표를 찾는 정규식
+        tables = re.findall(table_pattern, markdown, re.DOTALL)
+        table_chunks = []
+        for table in tables:
+            # 표를 pandas로 변환해 JSON으로 저장
+            rows = [line.split("|")[1:-1] for line in table.strip().split("\n")]
+            df = pd.DataFrame(rows[1:], columns=rows[0])
+            table_chunks.append(df.to_json())
+        return table_chunks
+    
+    def _pdf_4llm_processing(self, docs):
+        headers_to_split_on = [
+            ("#", "Header 1"),
+            ("##", "Header 2"),
+            ("###", "Header 3"),
+        ] 
+        markdown_splitter = MarkdownHeaderTextSplitter(
+            headers_to_split_on=headers_to_split_on,
+            strip_headers=False
+        )            
+        all_header_splits = []
+        for page_doc in docs:
+            # 페이지 메타데이터 보존
+            page_metadata = page_doc.metadata
+            
+            # 헤더 기준으로 분할
+            header_splits = markdown_splitter.split_text(page_doc.page_content)
+            
+            # 원본 페이지 메타데이터 추가
+            for split in header_splits:
+                split.metadata.update(page_metadata)
+                if "|---|" in split.page_content:
+                        table_chunks = self._extract_tables(split.page_content)
+                        split.page_content = table_chunks
+                else:
+                    pass
+            all_header_splits.extend(header_splits)
+        return all_header_splits
+
+
 
     def load(
         self, filename: str, file_content_type: str, file_path: str
     ) -> list[Document]:
         loader = self._get_loader(filename, file_content_type, file_path)
         docs = loader.load()
-
-        return [
-            Document(
-                page_content=ftfy.fix_text(doc.page_content), metadata=doc.metadata
-            )
-            for doc in docs
-        ]
+        if isinstance(loader, PyMuPDF4LLMLoader):
+            headers_to_split_on = [
+                ("#", "Header 1"),
+                ("##", "Header 2"),
+                ("###", "Header 3"),
+            ]
+            markdown_splitter = MarkdownHeaderTextSplitter(
+                headers_to_split_on=headers_to_split_on,
+                strip_headers=False
+            )            
+            all_header_splits = []
+            for page_doc in docs:
+                # 페이지 메타데이터 보존
+                page_metadata = page_doc.metadata
+                
+                # 헤더 기준으로 분할
+                header_splits = markdown_splitter.split_text(page_doc.page_content)
+                
+                # 원본 페이지 메타데이터 추가
+                for split in header_splits:
+                    split.metadata.update(page_metadata)
+                
+                all_header_splits.extend(header_splits)
+            return all_header_splits
+        else:
+            return [
+                Document(
+                    page_content=ftfy.fix_text(doc.page_content), metadata=doc.metadata
+                )
+                for doc in docs
+            ]
 
     def _is_text_file(self, file_ext: str, file_content_type: str) -> bool:
         return file_ext in known_source_ext or (
@@ -356,8 +432,20 @@ class Loader:
             )
         else:
             if file_ext == "pdf":
-                loader = PyPDFLoader(
-                    file_path, extract_images=self.kwargs.get("PDF_EXTRACT_IMAGES")
+                # loader = PyPDFLoader(
+                #     file_path, extract_images=self.kwargs.get("PDF_EXTRACT_IMAGES")
+                # )
+                loader = PyMuPDF4LLMLoader(
+                    file_path, mode="page",
+                    table_strategy="lines_strict",
+                    extract_images=True,
+                    images_parser=LLMImageBlobParser(
+                        model=ChatOpenAI(
+                            model="/models/Qwen2.5-VL-7B-Instruct",
+                            api_key="dummy",
+                            base_url="http://10.52.40.23:8000/v1"
+                        )
+                    )
                 )
             elif file_ext == "csv":
                 loader = CSVLoader(file_path, autodetect_encoding=True)

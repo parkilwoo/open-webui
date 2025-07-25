@@ -1,0 +1,57 @@
+services:
+  open-webui:
+    build:
+      context: .
+      dockerfile: Dockerfile.custom
+    container_name: open-webui-custom
+    networks:
+      - my-network
+    volumes:
+      - open-webui:/app/backend/data
+    ports:
+      - ${OPEN_WEBUI_PORT-3000}:8080
+    environment:
+      - 'ENABLE_OLLAMA_API=${ENABLE_OLLAMA_API-false}'
+      - 'OPENAI_API_BASE_URL=${OPENAI_API_BASE_URL}/v1'
+      - 'RAG_EMBEDDING_ENGINE=${RAG_EMBEDDING_ENGINE-openai}'
+      - 'RAG_OPENAI_API_BASE_URL=${RAG_OPENAI_API_BASE_URL}/v1'
+      - 'RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL-/models/Qwen3-Embedding-8B}'
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    restart: unless-stopped
+
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: vllm
+    ports:
+      - "8000:8000"
+    volumes:
+      - /home/tmax/Downloads/models:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+    networks:
+      - my-network              
+    command:
+      - --model
+      - /models/BGE-m3-ko
+      - --trust-remote-code
+      - --task
+      - embed
+      - --max-model-len
+      - "8192"
+      - --dtype
+      - float16
+      - --port
+      - "8000"
+    tty: true    
+
+volumes:
+  open-webui: {}
+
+networks:
+  my-network:
+    driver: bridge  
